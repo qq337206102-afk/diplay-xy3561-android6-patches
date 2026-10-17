@@ -1,5 +1,7 @@
 # DiPlay · XY3561 Android 6 兼容补丁
 
+[![Source patch checks](https://github.com/qq337206102-afk/diplay-xy3561-android6-patches/actions/workflows/source-checks.yml/badge.svg)](https://github.com/qq337206102-afk/diplay-xy3561-android6-patches/actions/workflows/source-checks.yml)
+
 针对 XY AUTO MT3561 老车机的个人兼容适配，基于 [DiPlay](https://github.com/shihabal3amri/DiPlay)。不是上游官方版本，也不是车机刷机包。本仓库只发布补丁、说明和脱敏测试摘要，不分发 APK、认证材料或车机固件。
 
 ## 已确认的结果
@@ -24,6 +26,10 @@
 - 保留竖屏支持；不改 MCU、CAN、倒车或系统分区。
 
 ## 使用与边界
+
+第一次使用请从 [完整下载与构建步骤](docs/BUILD.md) 开始。固定源码补丁版：`xy3561-api23-v3-source.1`；也可从 [Releases](https://github.com/qq337206102-afk/diplay-xy3561-android6-patches/releases) 获取源码快照。它不是可安装 APK。
+
+[兼容性记录](docs/COMPATIBILITY.md) · [变更记录](CHANGELOG.md) · [提交问题](https://github.com/qq337206102-afk/diplay-xy3561-android6-patches/issues/new/choose)
 
 先看 [构建说明](docs/BUILD.md)、[验证记录](docs/VALIDATION.md) 和 [许可证说明](LICENSING.md)。补丁只针对固定上游提交，不能直接安装到车机。
 

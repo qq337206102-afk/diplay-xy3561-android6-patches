@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.apk
+*.aab
+*.zip
+*.jks
+*.keystore
+*.pk8
+*.p7b
+*.pem
+*.p12
+*.pfx
+*.key
+local.properties
+.env

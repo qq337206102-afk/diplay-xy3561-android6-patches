@@ -1,0 +1,245 @@
+{
+  "upstream": "https://github.com/shihabal3amri/DiPlay",
+  "base_commit": "c30d3f0df18dd132739d864a9e054c73b3d57d8c",
+  "version_name": "0.2.19-xy3561-api23-v3",
+  "version_code": 44,
+  "patch": "patches/0001-xy3561-api23-compat.patch",
+  "patch_sha256": "e2ad7f98f893085a732a5756f8218449b4fc8effd732ef2b9d3ec7a8d0b3e8bb",
+  "files": [
+    {
+      "path": "automotive/build.gradle.kts",
+      "sha256": "e702eb725fd6ba2f6d00edb006a52b3198fccd7be5b8d72a498a29d20856d4da",
+      "status": "modified"
+    },
+    {
+      "path": "common/build.gradle.kts",
+      "sha256": "952b6726976e6e48849ff07f1b3ca93fda187e6cb9d4ec03952527f9408bf273",
+      "status": "modified"
+    },
+    {
+      "path": "common/src/main/java/com/shilapi/xcertplay/Api23UiCompat.kt",
+      "sha256": "e11e2919006b924098d09dc7697fec60ee53a1da4b7c3cfc7730aba835fa186b",
+      "status": "added"
+    },
+    {
+      "path": "common/src/main/java/com/shilapi/xcertplay/AppLocale.kt",
+      "sha256": "1a54dad64beb5b54dab8c33af4851ee79acfae282c4d50dafe0115e73eb8e978",
+      "status": "modified"
+    },
+    {
+      "path": "common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt",
+      "sha256": "435bf567dcf523a802cd402087a5ba9e9642a2e8941ac95cfc8a95cf0da4a577",
+      "status": "modified"
+    },
+    {
+      "path": "common/src/main/java/com/shilapi/xcertplay/CarPlayVideo.kt",
+      "sha256": "c0ef8c4872246216eabda69b762e5de39267233b0033a3cd076521f92dd9246b",
+      "status": "modified"
+    },
+    {
+      "path": "common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt",
+      "sha256": "9fcd8f3566c4d439ca0ce985ede90351e990ac65ba6dbde0341a72a086a5cc17",
+      "status": "modified"
+    },
+    {
+      "path": "common/src/main/java/com/shilapi/xcertplay/InterfaceSize.kt",
+      "sha256": "cb6f6f7b5d638e4424534b8fbc2e95d4ebe8b78ab9573019df187dd87b642c6b",
+      "status": "modified"
+    },
+    {
+      "path": "common/src/main/java/com/shilapi/xcertplay/update/UpdateClient.kt",
+      "sha256": "8467c81862d8652841533ca1c974e725317035ad758fc6fd48a50a49d638b0bd",
+      "status": "modified"
+    },
+    {
+      "path": "common/src/test/java/com/shilapi/xcertplay/AmbientAlbumUiScreenshotsTest.kt",
+      "sha256": "d869a3aace789eda5575e56f30554eb5287d8eb506c2b9f4e0d173114a6441e9",
+      "status": "modified"
+    },
+    {
+      "path": "common/src/test/java/com/shilapi/xcertplay/AmbientMusicSettingsUiTest.kt",
+      "sha256": "c69dd3f7586b3f21825742fa67e06edf9fa1e639f756bb576c3de25b72db58bc",
+      "status": "modified"
+    },
+    {
+      "path": "common/src/test/java/com/shilapi/xcertplay/Api23UiCompatTest.kt",
+      "sha256": "ca94acf002408b2a9d11ed70e8980af325c66258e8cfe0854ed7e3a9bd41a385",
+      "status": "added"
+    },
+    {
+      "path": "common/src/test/java/com/shilapi/xcertplay/CarPlayBonjourBindConflictTest.kt",
+      "sha256": "634b68f2a285dc808632cc92d99185930324de19dcaf6af79357e06e7f3d7c4a",
+      "status": "added"
+    },
+    {
+      "path": "gradle/libs.versions.toml",
+      "sha256": "a35f43a4edc15ce36a03736702478ed327c884b71bc0973ffd7ff49ba9cacad0",
+      "status": "modified"
+    },
+    {
+      "path": "mobile/build.gradle.kts",
+      "sha256": "e2eb92ab5cf808d5d224948132e54d892ec0d01d78e0747df03cc2d311b9a5bf",
+      "status": "modified"
+    },
+    {
+      "path": "mobile/src/debug/AndroidManifest.xml",
+      "sha256": "0bd7c0a9395c50e9ff764e6c5cbbb68f75c83b0ce00f6f5e9a0c24f3d9eaef72",
+      "status": "modified"
+    },
+    {
+      "path": "mobile/src/main/AndroidManifest.xml",
+      "sha256": "858094a251bf4e9c6ad5c10f6448b5458c314b11b1f35cee60510cf1bf0bf15c",
+      "status": "modified"
+    },
+    {
+      "path": "samples/home/build.gradle.kts",
+      "sha256": "dd5ec668656020b590a9edc80c99b5bf8fb93532eb5658309c4449c0c9534982",
+      "status": "modified"
+    },
+    {
+      "path": "shared/build.gradle",
+      "sha256": "0d0934a1f33056f1ae0644fdf663a8b2cc70bca8a987f21f6d51bbd5feac7661",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/AndroidManifest.xml",
+      "sha256": "9dd93d432cd61b51711650c6232ee01046c5807e31e6ad972eb8cceb578c3d54",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayCrypto.kt",
+      "sha256": "f6d39471c4411784804577025b178ca68d9d80275cf6e02b16377807205a093f",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/hud/BydAmbientLightClient.kt",
+      "sha256": "0b10f025d7d1b1f3fc621d7c4f965ba508479352443d82549fcd44f1b905f5e7",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/media/AmbientLampSession.kt",
+      "sha256": "c15524fd30a7ff2af30bb21f5b28d772fc4613b47287d0c64cda64f181f627a5",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/media/AmbientMusicController.kt",
+      "sha256": "a27539843b83c6c414b871a94a7bc3f86806e7d4c4ec9fb90d78e700329d63dd",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt",
+      "sha256": "6ac91bb6ecebe3f343ee0529fa9308fd7f0ef16f09fb86c7e0463355226bca9d",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt",
+      "sha256": "dbd08e1d2b712adc13f21a0211e053e2adc8a6e09c6779a29dd9851feb0b432b",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/network/CarHotspotTethering.kt",
+      "sha256": "7441b2961f6d310e81c403ab56129edf222ca6b9b7e73784816229ed9dc5fcfd",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/network/CarPlayBonjour.kt",
+      "sha256": "6ee7f85d5bce1e8df3d4820bf512d98798a6142b82fb322130f8495921186bc0",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/network/HotspotJoinCapability.kt",
+      "sha256": "f952724bdcbbf740e3b499a13d1aded3007f1750870c38f0671e45e2f4a9ae1d",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/network/LegacyWirelessAddresses.kt",
+      "sha256": "dbb1ffa778ff20dcbf3276caf2f167cbf8448c814901d955267b6cbe978db125",
+      "status": "added"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotInterfaces.kt",
+      "sha256": "bfa716248bb760c1bba8526dff0a40477880d72e1a1caafa9c209efc20cddc9d",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/network/MdnsPortDiagnostics.kt",
+      "sha256": "24b99fb4840f39244a497c330f5c48ad5b9c2200f2c75fc72c4817db47fe6551",
+      "status": "added"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt",
+      "sha256": "6f9b0ea89432fb52ed5de061818e7b36ca1fc5c80ec4e08e72436ae3aa7d73ac",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/orchestration/ControllerTeardownGate.kt",
+      "sha256": "6c85ecd628984afb763a8c2ba9fd566f0f6207531f359ba84b7193e659cd8787",
+      "status": "added"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/telecom/PhoneAudioRoute.kt",
+      "sha256": "703fdbad746643dc765eac2b3e4e90fa99d6290f4d71a96c81cfd2334ba956d2",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/java/com/shilapi/xcertplay/transport/LockdownTlsEngineFactory.kt",
+      "sha256": "fda1d3b681e8e94679b8b8f426cb127ea613936f23a32f56661be3ff77416a2e",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/jni/Application.mk",
+      "sha256": "a874a43439ac5a50eeb73430208f9d66a649fe7858ba881c884bcdc1d5605edc",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/main/res/values-v26/api23_compat.xml",
+      "sha256": "3dba0dba650865c09f9ca2b4c03750ee5417335aeddf99a63c4bebf8eee7c584",
+      "status": "added"
+    },
+    {
+      "path": "shared/src/main/res/values/api23_compat.xml",
+      "sha256": "f24e8e25154c7585e1a10319192c53683687e8ae3e61767fc962baf888e6e486",
+      "status": "added"
+    },
+    {
+      "path": "shared/src/test/java/com/shilapi/xcertplay/adb/LocalAdbApprovalTest.kt",
+      "sha256": "7e624d22735c11eae6c5407a12c0175d16846e9c0f4071ff5cad5a028bf0ef73",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayCryptoAndroidCompatibilityTest.kt",
+      "sha256": "1523785eaafc609d5e176b5bea4a3f29f50f015f09c8c093c6f9e72fcadb9148",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/test/java/com/shilapi/xcertplay/media/AmbientLampSessionTest.kt",
+      "sha256": "904ef1927efed598bba93480d66e3f5fc26fcf14531837e14c49000e1e2def54",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/test/java/com/shilapi/xcertplay/media/AmbientMusicEnvelopeTest.kt",
+      "sha256": "e41bb0302e73fc73ee165560ba37231b5a6ff610beebfbcb57621354e930ba7c",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/test/java/com/shilapi/xcertplay/network/CarHotspotTetheringTest.kt",
+      "sha256": "1ee77f76bbad8a8d00fa612c3abb2c174a47f8dff16fe65a2e9f06c2b4324a84",
+      "status": "modified"
+    },
+    {
+      "path": "shared/src/test/java/com/shilapi/xcertplay/network/LegacyWirelessAddressesTest.kt",
+      "sha256": "af334941865bef34106f03a9319797478411ee94226f99eb1f5a64ddfa82e151",
+      "status": "added"
+    },
+    {
+      "path": "shared/src/test/java/com/shilapi/xcertplay/network/MdnsPortDiagnosticsTest.kt",
+      "sha256": "77513b37d8c5e8c2ee8b634f00e7582e41c8ee3de1fab8ba7138f257dff65f25",
+      "status": "added"
+    },
+    {
+      "path": "shared/src/test/java/com/shilapi/xcertplay/orchestration/ControllerTeardownGateTest.kt",
+      "sha256": "c2ee123fa35634ce9d04766b350e1025a5b11fce66cb9f3529970382b7b44add",
+      "status": "added"
+    }
+  ]
+}

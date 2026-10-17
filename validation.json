@@ -1,0 +1,11 @@
+{
+  "checked_on": "2026-10-17",
+  "source_files": 47,
+  "independent_base_apply_check": "passed",
+  "applied_contents_match_git_blobs": "passed",
+  "original_source_index_unchanged": true,
+  "original_source_tracked_diff_unchanged": true,
+  "application_ci_rerun_during_packaging": false,
+  "historical_test_failures": 4,
+  "remote_published_at_packaging_time": false
+}

@@ -1,0 +1,43 @@
+name: 问题反馈
+description: 提交脱敏的兼容性或连接问题
+body:
+  - type: markdown
+    attributes:
+      value: 请停车后排查。不要上传认证材料、密钥、配对数据、完整日志、密码、设备唯一标识或精确位置。
+  - type: input
+    id: version
+    attributes:
+      label: 补丁/应用版本
+      placeholder: 例如 0.2.19-xy3561-api23-v3 / code 44
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: 硬件与真实系统 API
+      description: 芯片、型号、内存、真实 API；不要填写 IMEI/ICCID/序列号。
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: 连接方式
+      options:
+        - 车载热点
+        - Wi-Fi Direct
+        - 同一局域网
+        - USB
+        - 未连接/构建问题
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤、预期结果与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: 脱敏错误摘要
+      description: 只贴必要错误行；先移除密码、地址、标识符、位置和认证信息。

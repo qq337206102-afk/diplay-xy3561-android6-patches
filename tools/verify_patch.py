@@ -29,7 +29,12 @@ def main():
         temp = Path(folder)
         upstream = args.upstream.resolve() if args.upstream else temp / 'upstream'
         if not args.upstream:
-            git('clone', '--no-checkout', '--filter=blob:none', manifest['upstream'] + '.git', str(upstream))
+            upstream.mkdir()
+            git('init', '--quiet', cwd=upstream)
+            git('remote', 'add', 'origin', manifest['upstream'] + '.git', cwd=upstream)
+            # Fetch the pinned commit directly; partial clones can trigger one network
+            # request per blob during checkout-index, making a small check very slow.
+            git('fetch', '--depth=1', 'origin', manifest['base_commit'], cwd=upstream)
         require(git('cat-file', '-t', manifest['base_commit'], cwd=upstream).strip() == b'commit', 'Base is not a commit')
         # A separate index and worktree avoid any mutation of an existing developer checkout.
         import os

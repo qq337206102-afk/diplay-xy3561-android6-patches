@@ -1,0 +1,1507 @@
+diff --git a/automotive/build.gradle.kts b/automotive/build.gradle.kts
+index 0da638cb35e4fd9af03d59d1eaa629aab48fe6db..f5cf69b3bde3385e5f254af94e51be44873b5fce 100644
+--- a/automotive/build.gradle.kts
++++ b/automotive/build.gradle.kts
+@@ -39,6 +39,7 @@ android {
+         }
+     }
+     compileOptions {
++        isCoreLibraryDesugaringEnabled = true
+         sourceCompatibility = JavaVersion.VERSION_11
+         targetCompatibility = JavaVersion.VERSION_11
+     }
+@@ -48,6 +49,7 @@ android {
+ }
+ 
+ dependencies {
++    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+     implementation(project(":common"))
+     implementation(project(":shared"))
+     implementation(platform(libs.androidx.compose.bom))
+diff --git a/common/build.gradle.kts b/common/build.gradle.kts
+index c862daa2dd7850f52b8bbb899d238df359f54cf5..9efd97595b2bf07335fd98f12f10279b9c53eb06 100644
+--- a/common/build.gradle.kts
++++ b/common/build.gradle.kts
+@@ -10,10 +10,11 @@ android {
+     }
+ 
+     defaultConfig {
+-        minSdk = 25
++        minSdk = 23
+     }
+ 
+     compileOptions {
++        isCoreLibraryDesugaringEnabled = true
+         sourceCompatibility = JavaVersion.VERSION_11
+         targetCompatibility = JavaVersion.VERSION_11
+     }
+@@ -30,6 +31,7 @@ android {
+ }
+ 
+ dependencies {
++    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+     api(project(":shared"))
+     implementation(platform(libs.androidx.compose.bom))
+     implementation(libs.androidx.activity.compose)
+diff --git a/common/src/main/java/com/shilapi/xcertplay/Api23UiCompat.kt b/common/src/main/java/com/shilapi/xcertplay/Api23UiCompat.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..47eb3426544537d62842c9775ea1535a30ae318f
+--- /dev/null
++++ b/common/src/main/java/com/shilapi/xcertplay/Api23UiCompat.kt
+@@ -0,0 +1,32 @@
++// SPDX-License-Identifier: AGPL-3.0-only
++package com.shilapi.xcertplay
++
++import android.content.res.Configuration
++import android.graphics.drawable.GradientDrawable
++import android.os.Build
++import java.util.Locale
++
++/** API23 equivalents kept outside the UI's business logic. */
++internal object Api23UiCompat {
++    @Suppress("DEPRECATION")
++    fun firstLocale(configuration: Configuration): Locale =
++        if (Build.VERSION.SDK_INT >= 24) configuration.locales[0] ?: Locale.getDefault()
++        else configuration.locale ?: Locale.getDefault()
++
++    @Suppress("DEPRECATION")
++    fun copyLocales(target: Configuration, source: Configuration) {
++        if (Build.VERSION.SDK_INT >= 24) target.setLocales(source.locales)
++        else target.setLocale(firstLocale(source))
++        target.setLayoutDirection(firstLocale(source))
++    }
++
++    fun cornerRadius(drawable: GradientDrawable): Float {
++        if (Build.VERSION.SDK_INT >= 24) return drawable.cornerRadius
++        // Android6's GradientState stores the value, but has no public getter.
++        return try {
++            val stateField = GradientDrawable::class.java.getDeclaredField("mGradientState").apply { isAccessible = true }
++            val state = stateField.get(drawable)
++            state.javaClass.getDeclaredField("mRadius").apply { isAccessible = true }.getFloat(state)
++        } catch (_: ReflectiveOperationException) { 0f }
++    }
++}
+diff --git a/common/src/main/java/com/shilapi/xcertplay/AppLocale.kt b/common/src/main/java/com/shilapi/xcertplay/AppLocale.kt
+index a9fdffc382f3ff9837156299717afd3117f7ed7e..cfb2c930db8b4a69c77d138f2741bb7aea4b9db7 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/AppLocale.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/AppLocale.kt
+@@ -96,9 +96,9 @@ object AppLocale {
+     @Suppress("DEPRECATION")
+     fun enforce(context: Context): Boolean {
+         if (Build.VERSION.SDK_INT >= 33) return false
+-        val locale = locale(preference(context)) ?: Resources.getSystem().configuration.locales[0]
++        val locale = locale(preference(context)) ?: Api23UiCompat.firstLocale(Resources.getSystem().configuration)
+         val resources = context.resources
+-        if (resources.configuration.locales[0] == locale) return false
++        if (Api23UiCompat.firstLocale(resources.configuration) == locale) return false
+         val configuration = Configuration(resources.configuration).apply {
+             setLocale(locale)
+             setLayoutDirection(locale)
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+index d142ac2a69c792d481e801b364e0241de6d3fbd5..ae26a0c2136b2bbb18261b5c6765d756f7f0ff84 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+@@ -5964,6 +5964,9 @@ class CarPlayHostActivity : ComponentActivity() {
+ 
+     // Copies the SurfaceView's current picture (at half size) before its surface goes, waiting briefly for it.
+     private fun captureLastPicture() {
++        // PixelCopy does not exist on Android6. This optional freeze-frame is
++        // unrelated to the live decoder and must not break leaving CarPlay.
++        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return
+         val surfaceView = fallbackVideoView ?: return
+         val bounds = fallbackVideoBounds ?: return
+         if (!surfaceView.holder.surface.isValid) return
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayVideo.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayVideo.kt
+index 9204d0e992a27a3b97793ce1a6e888d43a008b54..3aa49b35478214bf826d23a358eb2fd3721d7478 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/CarPlayVideo.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayVideo.kt
+@@ -12,7 +12,7 @@ import com.shilapi.xcertplay.host.R
+ import com.shilapi.xcertplay.hud.BydNavigationOutputs
+ import com.shilapi.xcertplay.orchestration.CarPlayController
+ import com.shilapi.xcertplay.orchestration.CarPlayVideoListener
+-import java.util.concurrent.CompletableFuture
++import java9.util.concurrent.CompletableFuture
+ import java.util.concurrent.ConcurrentHashMap
+ import java.util.concurrent.Executors
+ import java.util.concurrent.TimeUnit
+diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+index d95dd0c24eca26d34960ad78dca3cda2abffc389..11a17e74648031dcbd587db3fb27499831ca6b6e 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+@@ -169,7 +169,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
+     private val windowLearningPresses = WheelKeyPresses()
+     private val endWindowLearning = Runnable { cancelKeyLearning() }
+     private var page = "home"
+-    internal var ambientSupportCheck: (Context) -> java.util.concurrent.CompletableFuture<Boolean> = AmbientMusicController::checkSupport
++    internal var ambientSupportCheck: (Context) -> java9.util.concurrent.CompletableFuture<Boolean> = AmbientMusicController::checkSupport
+     private var settingsCategory = SettingsCategory.OVERVIEW
+     private var connectionSettingsReturnCategory: SettingsCategory? = null
+     private var setupStep = SetupGuide.STEP_CAR
+@@ -762,7 +762,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
+             contentDescription = getString(R.string.carplay)
+         }, LinearLayout.LayoutParams(logoSize, logoSize))
+         addView(label(getString(R.string.diplay), if (compact) 20 else 26, TEXT, true,
+-            centreGlyphs = resources.configuration.locales[0].language != "zh").apply {
++            centreGlyphs = Api23UiCompat.firstLocale(resources.configuration).language != "zh").apply {
+             setPadding(if (compact) dp(8) else dp(12), 0, 0, 0)
+         }, LinearLayout.LayoutParams(0, if (compact) dp(44) else dp(52), 1f))
+         addView(appearanceButton(), LinearLayout.LayoutParams(dp(if (compact) 44 else 52), dp(if (compact) 44 else 52)).apply {
+@@ -1084,7 +1084,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
+                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+             }, LinearLayout.LayoutParams(dp(26), dp(26)).apply { marginEnd = dp(12) })
+             addView(label(title, 16, if (selected) ACCENT else TEXT, true,
+-                centreGlyphs = usesChineseGlyphAlignment(resources.configuration.locales[0].language, title)),
++                centreGlyphs = usesChineseGlyphAlignment(Api23UiCompat.firstLocale(resources.configuration).language, title)),
+                 LinearLayout.LayoutParams(0, -1, 1f))
+             setOnClickListener {
+                 openSettingsCategory(category)
+@@ -1843,7 +1843,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
+                 scheduleControls.visibility = if (nightModes[index] == CarPlayNightMode.SCHEDULE) View.VISIBLE else View.GONE
+                 handler.post(::checkForAppearanceChange)
+             }
+-            val sentenceSeparator = if (resources.configuration.locales[0].language == "zh") "" else " "
++            val sentenceSeparator = if (Api23UiCompat.firstLocale(resources.configuration).language == "zh") "" else " "
+             card.addView(label(getString(R.string.carplay_night_hint) + sentenceSeparator +
+                 getString(R.string.carplay_night_time_note), 14, MUTED).apply {
+                 setPadding(0, 0, 0, dp(18))
+@@ -3514,28 +3514,28 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
+                 getString(R.string.settings_cluster_speedometer_horizontal), ClusterSpeedometerOverlay.xPercents,
+                 AirPlayPersistence.loadClusterSpeedometerX(this),
+             ) { value -> "$value %" }.also { row ->
+-                row.getChildAt(0).layoutDirection = android.text.TextUtils.getLayoutDirectionFromLocale(resources.configuration.locales[0])
++                row.getChildAt(0).layoutDirection = android.text.TextUtils.getLayoutDirectionFromLocale(Api23UiCompat.firstLocale(resources.configuration))
+                 row.onSave = { value -> AirPlayPersistence.saveClusterSpeedometerX(this, value) }
+             })
+             card.addView(overlaySliderRow(
+                 getString(R.string.settings_cluster_speedometer_vertical), ClusterSpeedometerOverlay.yPercents,
+                 AirPlayPersistence.loadClusterSpeedometerY(this),
+             ) { value -> "$value %" }.also { row ->
+-                row.getChildAt(0).layoutDirection = android.text.TextUtils.getLayoutDirectionFromLocale(resources.configuration.locales[0])
++                row.getChildAt(0).layoutDirection = android.text.TextUtils.getLayoutDirectionFromLocale(Api23UiCompat.firstLocale(resources.configuration))
+                 row.onSave = { value -> AirPlayPersistence.saveClusterSpeedometerY(this, value) }
+             })
+             card.addView(overlaySliderRow(
+                 getString(R.string.settings_cluster_speedometer_size), ClusterSpeedometerOverlay.sizePercents,
+                 AirPlayPersistence.loadClusterSpeedometerSize(this),
+             ) { value -> "$value %" }.also { row ->
+-                row.getChildAt(0).layoutDirection = android.text.TextUtils.getLayoutDirectionFromLocale(resources.configuration.locales[0])
++                row.getChildAt(0).layoutDirection = android.text.TextUtils.getLayoutDirectionFromLocale(Api23UiCompat.firstLocale(resources.configuration))
+                 row.onSave = { value -> AirPlayPersistence.saveClusterSpeedometerSize(this, value) }
+             })
+             card.addView(overlaySliderRow(
+                 getString(R.string.settings_cluster_speedometer_opacity), ClusterSpeedometerOverlay.opacityPercents,
+                 AirPlayPersistence.loadClusterSpeedometerOpacity(this),
+             ) { value -> "$value %" }.also { row ->
+-                row.getChildAt(0).layoutDirection = android.text.TextUtils.getLayoutDirectionFromLocale(resources.configuration.locales[0])
++                row.getChildAt(0).layoutDirection = android.text.TextUtils.getLayoutDirectionFromLocale(Api23UiCompat.firstLocale(resources.configuration))
+                 row.onSave = { value -> AirPlayPersistence.saveClusterSpeedometerOpacity(this, value) }
+             })
+         }
+@@ -5598,7 +5598,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
+             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+         }, LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginEnd = dp(12) })
+         heading.addView(label(title, 22, TEXT, true,
+-            centreGlyphs = icon != null && usesChineseGlyphAlignment(resources.configuration.locales[0].language, title)),
++            centreGlyphs = icon != null && usesChineseGlyphAlignment(Api23UiCompat.firstLocale(resources.configuration).language, title)),
+             LinearLayout.LayoutParams(0, -2, 1f))
+         card.addView(heading)
+         build(card)
+@@ -5921,7 +5921,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
+         doOnLayout {
+             val shape = buttonShape(if (primary) ACCENT else BUTTON, if (primary) ACCENT else BORDER, height)
+             background = android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(RIPPLE), shape, null)
+-            foreground = focusRing((shape.cornerRadius / resources.displayMetrics.density).roundToInt())
++            foreground = focusRing((Api23UiCompat.cornerRadius(shape) / resources.displayMetrics.density).roundToInt())
+         }
+     }
+ 
+@@ -6183,7 +6183,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
+             bounds: android.graphics.Rect,
+             drawingBaseline: Int = view.baseline,
+         ): Float {
+-            if (usesChineseGlyphAlignment(view.resources.configuration.locales[0].language, text)) {
++            if (usesChineseGlyphAlignment(Api23UiCompat.firstLocale(view.resources.configuration).language, text)) {
+                 val value = text.toString()
+                 view.paint.getTextBounds(value, 0, value.length, bounds)
+                 return drawingBaseline + (bounds.top + bounds.bottom) / 2f
+diff --git a/common/src/main/java/com/shilapi/xcertplay/InterfaceSize.kt b/common/src/main/java/com/shilapi/xcertplay/InterfaceSize.kt
+index c65979f1c51bce871c07e478c7c39aa1d70aaffe..bde7dfa6b841513a1efcca2152969829ab03a57b 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/InterfaceSize.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/InterfaceSize.kt
+@@ -50,8 +50,7 @@ object InterfaceSize {
+             screenWidthDp = (base.screenWidthDp / scale).roundToInt()
+             screenHeightDp = (base.screenHeightDp / scale).roundToInt()
+             smallestScreenWidthDp = (base.smallestScreenWidthDp / scale).roundToInt()
+-            setLocales(base.locales)
+-            setLayoutDirection(base.locales[0])
++            Api23UiCompat.copyLocales(this, base)
+         }
+     }
+ 
+@@ -62,8 +61,7 @@ object InterfaceSize {
+      */
+     internal fun contextOverride(scaled: Configuration): Configuration = Configuration().apply {
+         densityDpi = scaled.densityDpi
+-        setLocales(scaled.locales)
+-        setLayoutDirection(scaled.locales[0])
++        Api23UiCompat.copyLocales(this, scaled)
+     }
+ 
+     /** Applies the density override for [base] to [activity]; call from attachBaseContext. */
+diff --git a/common/src/main/java/com/shilapi/xcertplay/update/UpdateClient.kt b/common/src/main/java/com/shilapi/xcertplay/update/UpdateClient.kt
+index 7a3032e019c2f1edb92a760dca2fd961710532a7..4e6cdffe412e88a41511a4f87cbb38255a6e5cc4 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/update/UpdateClient.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/update/UpdateClient.kt
+@@ -50,7 +50,8 @@ internal object UpdateClient {
+             connection.useCaches = false
+             val statusCode = connection.responseCode
+             if (statusCode !in 200..299) throw IOException("Download from $url failed: $statusCode")
+-            val total = connection.contentLengthLong.takeIf { it > 0 }
++            val total = (if (android.os.Build.VERSION.SDK_INT >= 24) connection.contentLengthLong
++                else connection.getHeaderField("Content-Length")?.toLongOrNull() ?: -1L).takeIf { it > 0 }
+             var written = 0L
+             connection.inputStream.use { input ->
+                 destination.outputStream().use { output ->
+diff --git a/common/src/test/java/com/shilapi/xcertplay/AmbientAlbumUiScreenshotsTest.kt b/common/src/test/java/com/shilapi/xcertplay/AmbientAlbumUiScreenshotsTest.kt
+index 860126223711a7afd0531c9716a10a7b8146f496..a43bd0557bbfd679f2aa21093735b033a54843bf 100644
+--- a/common/src/test/java/com/shilapi/xcertplay/AmbientAlbumUiScreenshotsTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/AmbientAlbumUiScreenshotsTest.kt
+@@ -15,7 +15,7 @@ import com.shilapi.xcertplay.host.R
+ import java.nio.file.Files
+ import java.nio.file.Path
+ import java.nio.file.Paths
+-import java.util.concurrent.CompletableFuture
++import java9.util.concurrent.CompletableFuture
+ import kotlin.math.roundToInt
+ import org.junit.After
+ import org.junit.Assert.assertEquals
+diff --git a/common/src/test/java/com/shilapi/xcertplay/AmbientMusicSettingsUiTest.kt b/common/src/test/java/com/shilapi/xcertplay/AmbientMusicSettingsUiTest.kt
+index c37ec02ed5b2c5c7b991b2707bf128fa3db70db2..7299f11bc67708868a0c80712be3bf0bccf62d32 100644
+--- a/common/src/test/java/com/shilapi/xcertplay/AmbientMusicSettingsUiTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/AmbientMusicSettingsUiTest.kt
+@@ -8,7 +8,7 @@ import android.widget.Switch
+ import com.shilapi.xcertplay.host.R
+ import com.shilapi.xcertplay.media.AmbientColorSource
+ import com.shilapi.xcertplay.media.AmbientMusicSettings
+-import java.util.concurrent.CompletableFuture
++import java9.util.concurrent.CompletableFuture
+ import org.junit.Assert.*
+ import org.junit.Before
+ import org.junit.Test
+diff --git a/common/src/test/java/com/shilapi/xcertplay/Api23UiCompatTest.kt b/common/src/test/java/com/shilapi/xcertplay/Api23UiCompatTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..b8325478dcf9b1a570f02706518c0572fa9f5566
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/Api23UiCompatTest.kt
+@@ -0,0 +1,39 @@
++// SPDX-License-Identifier: AGPL-3.0-only
++package com.shilapi.xcertplay
++
++import android.content.res.Configuration
++import android.graphics.drawable.GradientDrawable
++import java.util.Locale
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [23])
++class Api23UiCompatTest {
++    @Test fun localeAndPortraitDensityDoNotNeedLocaleList() {
++        val source = Configuration().apply {
++            setLocale(Locale.SIMPLIFIED_CHINESE)
++            densityDpi = 160
++            screenWidthDp = 768
++            screenHeightDp = 1024
++            smallestScreenWidthDp = 768
++        }
++        assertEquals(Locale.SIMPLIFIED_CHINESE, Api23UiCompat.firstLocale(source))
++        val target = Configuration()
++        Api23UiCompat.copyLocales(target, source)
++        assertEquals(Locale.SIMPLIFIED_CHINESE, Api23UiCompat.firstLocale(target))
++        val scaled = requireNotNull(InterfaceSize.override(source, 125))
++        assertTrue(scaled.screenHeightDp > scaled.screenWidthDp)
++        assertEquals(Locale.SIMPLIFIED_CHINESE, Api23UiCompat.firstLocale(scaled))
++        assertEquals(Locale.SIMPLIFIED_CHINESE,
++            Api23UiCompat.firstLocale(InterfaceSize.contextOverride(scaled)))
++    }
++
++    @Test fun roundedFocusBorderUsesStoredRadius() {
++        val drawable = GradientDrawable().apply { cornerRadius = 18f }
++        assertEquals(18f, Api23UiCompat.cornerRadius(drawable), 0.01f)
++    }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayBonjourBindConflictTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayBonjourBindConflictTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..e7c7fb3ea9f94539933590b9304c660260af3394
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/CarPlayBonjourBindConflictTest.kt
+@@ -0,0 +1,116 @@
++package com.shilapi.xcertplay
++
++import android.content.Context
++import android.net.nsd.NsdManager
++import android.net.nsd.NsdServiceInfo
++import android.net.wifi.WifiManager
++import com.shilapi.xcertplay.airplay.*
++import com.shilapi.xcertplay.network.CarPlayBonjour
++import java.io.IOException
++import java.net.BindException
++import java.net.DatagramSocket
++import java.net.InetAddress
++import java.net.InetSocketAddress
++import javax.jmdns.JmDNS
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.mockito.ArgumentMatchers.*
++import org.mockito.Mockito.*
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [23], manifest = Config.NONE)
++class CarPlayBonjourBindConflictTest {
++    private val context = mock(Context::class.java)
++    private val wifi = mock(WifiManager::class.java)
++    private val lock = mock(WifiManager.MulticastLock::class.java)
++    private val nsd = mock(NsdManager::class.java)
++    private val address = InetAddress.getByName("192.0.2.10")
++    private val config = AirPlayConfig(deviceName="DiPlay", deviceId="02:00:00:00:00:02",
++        btMac="02:00:00:00:00:02",sourceVersion="366.0",main=AirPlayDisplayConfig(768,882))
++    private val identity = AirPlayIdentity(ByteArray(32),ByteArray(32),"test-pairing")
++    private val diagnostics = mutableListOf<String>()
++    private fun setup() {
++        `when`(context.applicationContext).thenReturn(context)
++        `when`(context.getSystemService(WifiManager::class.java)).thenReturn(wifi)
++        `when`(context.getSystemService(Context.NSD_SERVICE)).thenReturn(nsd)
++        `when`(wifi.createMulticastLock("carplay-bonjour")).thenReturn(lock)
++        `when`(lock.isHeld).thenReturn(true)
++    }
++    private fun client(extras: List<InetAddress> = emptyList()) = CarPlayBonjour(context,config,identity,
++        advertisedHost=address.hostAddress,useInterfaceMdns=true,additionalAddresses=extras,
++        onDiagnostic={diagnostics.add(it)})
++
++    @Test fun occupiedPortFallsBackWithoutClosingTheOtherOwnersSocket() {
++        setup()
++        // An actual held UDP socket, not just a fabricated success response.
++        DatagramSocket(null).use { owner ->
++            owner.reuseAddress=false
++            owner.bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"),0))
++            val conflict = try {
++                DatagramSocket(null).use { contender ->
++                    contender.reuseAddress=false
++                    contender.bind(owner.localSocketAddress)
++                }
++                throw AssertionError("Expected a real bind conflict")
++            } catch (error: BindException) { error }
++            mockStatic(JmDNS::class.java).use { factory ->
++                factory.`when`<JmDNS> { JmDNS.create(address,"carplay-020000000002") }.thenThrow(conflict)
++                client().use { bonjour ->
++                    bonjour.start(); bonjour.start()
++                    assertTrue(bonjour.diagnosticSnapshot().contains("discoveryBackend=system_nsd"))
++                    verify(nsd,times(1)).registerService(any(NsdServiceInfo::class.java),eq(NsdManager.PROTOCOL_DNS_SD),any(NsdManager.RegistrationListener::class.java))
++                    verify(nsd,times(1)).discoverServices(eq("_carplay-ctrl._tcp"),eq(NsdManager.PROTOCOL_DNS_SD),any(NsdManager.DiscoveryListener::class.java))
++                    assertFalse(owner.isClosed)
++                }
++                verify(nsd).unregisterService(any(NsdManager.RegistrationListener::class.java))
++                verify(nsd).stopServiceDiscovery(any(NsdManager.DiscoveryListener::class.java))
++                assertFalse(owner.isClosed)
++                assertTrue(diagnostics.any { it.contains("udpPort=5353; fallback=system_nsd") })
++            }
++        }
++    }
++    @Test fun unrelatedIoFailureDoesNotSilentlyChangeBackend() {
++        setup()
++        mockStatic(JmDNS::class.java).use { factory ->
++            factory.`when`<JmDNS> { JmDNS.create(address,"carplay-020000000002") }.thenThrow(IOException("network down"))
++            try { client().use { it.start() }; fail("must propagate") } catch (_: IOException) { }
++            verifyNoInteractions(nsd)
++            verify(lock).release()
++        }
++    }
++    @Test fun permissionDeniedIsNotMistakenForPortOccupancy() {
++        setup()
++        mockStatic(JmDNS::class.java).use { factory ->
++            factory.`when`<JmDNS> { JmDNS.create(address,"carplay-020000000002") }.thenThrow(BindException("Permission denied"))
++            try { client().use { it.start() }; fail("must propagate") } catch (_: BindException) { }
++            verifyNoInteractions(nsd)
++        }
++    }
++    @Test fun partiallyCreatedRegistriesAreClosedBeforeFallback() {
++        setup()
++        val second=InetAddress.getByName("192.0.2.11")
++        val dns=mock(JmDNS::class.java)
++        mockStatic(JmDNS::class.java).use { factory ->
++            factory.`when`<JmDNS> { JmDNS.create(address,"carplay-020000000002") }.thenReturn(dns)
++            factory.`when`<JmDNS> { JmDNS.create(second,"carplay-020000000002") }.thenThrow(BindException("Address already in use"))
++            client(listOf(second)).use { it.start() }
++            val order=inOrder(dns,nsd)
++            order.verify(dns).close()
++            order.verify(nsd).registerService(any(NsdServiceInfo::class.java),eq(NsdManager.PROTOCOL_DNS_SD),any(NsdManager.RegistrationListener::class.java))
++            verify(dns,times(1)).close()
++        }
++    }
++    @Test fun fallbackDiscoveryFailureUnregistersItsPublicationAndReleasesLock() {
++        setup()
++        doThrow(IllegalStateException("NSD unavailable")).`when`(nsd).discoverServices(anyString(),anyInt(),any(NsdManager.DiscoveryListener::class.java))
++        mockStatic(JmDNS::class.java).use { factory ->
++            factory.`when`<JmDNS> { JmDNS.create(address,"carplay-020000000002") }.thenThrow(BindException("Address already in use"))
++            try { client().use { it.start() }; fail("must propagate") } catch (_: IllegalStateException) { }
++            verify(nsd).unregisterService(any(NsdManager.RegistrationListener::class.java))
++            verify(lock).release()
++        }
++    }
++}
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index b7f84c3b52474e15cda46f5e4f3d43ccbf2d08a6..96c562a7a07fd1e92ccd8bf1872e474cf9a1c3b3 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -14,9 +14,11 @@ bouncycastle = "1.79"
+ jmdns = "3.6.3"
+ media3 = "1.11.1"
+ zxing = "3.5.3"
+-work = "2.12.0"
++work = "2.11.2"
++retrofuture = "1.7.4"
+ 
+ [libraries]
++android-retrofuture = { group = "net.sourceforge.streamsupport", name = "android-retrofuture", version.ref = "retrofuture" }
+ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+ androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+ androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+diff --git a/mobile/build.gradle.kts b/mobile/build.gradle.kts
+index 5612c4ca3ce785f504bdc9b577f1d032a1014f72..64d5dbac42ce62484e4b86db3a7d278993fbb438 100644
+--- a/mobile/build.gradle.kts
++++ b/mobile/build.gradle.kts
+@@ -15,10 +15,10 @@ android {
+ 
+     defaultConfig {
+         applicationId = "com.shihab.diplay"
+-        minSdk = 25
++        minSdk = 23
+         targetSdk = 37
+-        versionCode = 38
+-        versionName = "0.2.19"
++        versionCode = 44
++        versionName = "0.2.19-xy3561-api23-v3"
+ 
+     }
+ 
+@@ -39,8 +39,7 @@ android {
+ 
+     buildTypes {
+         debug {
+-            applicationIdSuffix = ".hudtest"
+-            versionNameSuffix = "-hud-test"
++            // Local XY3561 build keeps the installed package for in-place updates.
+         }
+         release {
+             optimization {
+@@ -50,6 +49,7 @@ android {
+         }
+     }
+     compileOptions {
++        isCoreLibraryDesugaringEnabled = true
+         sourceCompatibility = JavaVersion.VERSION_11
+         targetCompatibility = JavaVersion.VERSION_11
+     }
+@@ -59,6 +59,7 @@ android {
+ }
+ 
+ dependencies {
++    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+     implementation(platform(libs.androidx.compose.bom))
+     implementation(project(":common"))
+     implementation(project(":shared"))
+diff --git a/mobile/src/debug/AndroidManifest.xml b/mobile/src/debug/AndroidManifest.xml
+index bad1bcbc00b8b818135aef708209ce65e2c77bf1..27bb97bd8b8ccc9b6da19bb972892f698c879a0d 100644
+--- a/mobile/src/debug/AndroidManifest.xml
++++ b/mobile/src/debug/AndroidManifest.xml
+@@ -1,7 +1,7 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+     <uses-permission android:name="android.permission.BYDAUTO_INSTRUMENT_COMMON" />
+ <queries><package android:name="com.byd.clusterdebug" /></queries>
+-    <application android:label="DiPlay HUD Test" tools:replace="android:label">
++    <application android:label="DiPlay XY3561" tools:replace="android:label">
+     <receiver android:name="com.shilapi.xcertplay.hud.StarterBridgeReceiver" android:exported="true" android:permission="android.permission.DUMP" />
+     <activity android:name="com.shilapi.xcertplay.hud.StandaloneHudDemoActivity" android:exported="true" android:permission="android.permission.DUMP" />
+     </application></manifest>
+diff --git a/mobile/src/main/AndroidManifest.xml b/mobile/src/main/AndroidManifest.xml
+index bcc625f1de798e64eca7420ab086e02189ff7d52..dbe746a05499c0b9fdec9c5ea6cddac2909236c3 100644
+--- a/mobile/src/main/AndroidManifest.xml
++++ b/mobile/src/main/AndroidManifest.xml
+@@ -7,7 +7,7 @@
+         android:fullBackupContent="@xml/backup_rules"
+         android:dataExtractionRules="@xml/data_extraction_rules"
+         android:icon="@drawable/ic_carplay"
+-        android:label="@string/app_name"
++        android:label="DiPlay XY3561"
+         android:localeConfig="@xml/locales_config"
+         android:roundIcon="@drawable/ic_carplay"
+         android:supportsRtl="true"
+diff --git a/samples/home/build.gradle.kts b/samples/home/build.gradle.kts
+index 8b89ce595b74bd570920244c172fc77d45932cce..37313fa49962b77e7a7ba43e4802d8da9cf4f517 100644
+--- a/samples/home/build.gradle.kts
++++ b/samples/home/build.gradle.kts
+@@ -18,6 +18,7 @@ android {
+     }
+ 
+     compileOptions {
++        isCoreLibraryDesugaringEnabled = true
+         sourceCompatibility = JavaVersion.VERSION_11
+         targetCompatibility = JavaVersion.VERSION_11
+     }
+@@ -28,6 +29,7 @@ android {
+ }
+ 
+ dependencies {
++    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+     implementation(libs.androidx.activity)
+     testImplementation(libs.junit)
+     testImplementation("org.robolectric:robolectric:4.17")
+diff --git a/shared/build.gradle b/shared/build.gradle
+index 8d68c8581861f349359b7670fbb9f4469b7e5d7c..753fdad998765226dcbdef5815d32384db67f53f 100644
+--- a/shared/build.gradle
++++ b/shared/build.gradle
+@@ -6,7 +6,7 @@ android {
+     compileSdk = 37
+ 
+     defaultConfig {
+-        minSdk = 25
++        minSdk = 23
+         consumerProguardFiles 'ambient-consumer-rules.pro'
+         targetSdk = 37
+ 
+@@ -16,7 +16,7 @@ android {
+ 
+         externalNativeBuild {
+             ndkBuild {
+-                arguments 'APP_PLATFORM=android-25'
++                arguments 'APP_PLATFORM=android-23'
+             }
+         }
+ 
+@@ -33,14 +33,25 @@ android {
+         aidl true
+     }
+     compileOptions {
++        coreLibraryDesugaringEnabled true
+         sourceCompatibility = JavaVersion.VERSION_11
+         targetCompatibility = JavaVersion.VERSION_11
+     }
+ }
+ dependencies {
++    api libs.android.retrofuture
++    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+     implementation libs.androidx.app
+     implementation libs.bouncycastle
++    // Local AEAD provider for Android 6/7, which lack the platform's native ChaCha cipher.
++    // Never installed globally: TLS and the firmware's other providers are unchanged.
++    implementation 'org.conscrypt:conscrypt-android:2.7.0'
+     implementation libs.jmdns
+     testImplementation libs.junit
+     testImplementation 'org.robolectric:robolectric:4.17'
++    testRuntimeOnly 'org.conscrypt:conscrypt-openjdk-uber:2.5.2'
++}
++// Robolectric runs on Windows, not Android: use its desktop JNI provider for tests.
++configurations.matching { it.name.endsWith('UnitTestRuntimeClasspath') }.configureEach {
++    exclude group: 'org.conscrypt', module: 'conscrypt-android'
+ }
+diff --git a/shared/src/main/AndroidManifest.xml b/shared/src/main/AndroidManifest.xml
+index ae81eca63b3f42c80a3e4720d4087e5a5d6d7c49..3535defc896412beabdc0c6d9512cf79a46d317e 100644
+--- a/shared/src/main/AndroidManifest.xml
++++ b/shared/src/main/AndroidManifest.xml
+@@ -1,4 +1,4 @@
+-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
++<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+@@ -65,6 +65,8 @@
+         <!-- Only Telecom can bind it; it carries no UI or audio, see PhoneAudioRoute. -->
+         <service
+             android:name="com.shilapi.xcertplay.telecom.PhoneAudioConnectionService"
++            android:enabled="@bool/diplay_phone_audio_service_supported"
++            tools:targetApi="26"
+             android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+             android:exported="true">
+             <intent-filter>
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayCrypto.kt b/shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayCrypto.kt
+index 86e4f0f1e52c71ba1a9002a23cd2780d5e06d60c..d9a62c5dee0c60a4bdecbcf05500efbcb9742a47 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayCrypto.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayCrypto.kt
+@@ -1,6 +1,7 @@
+ package com.shilapi.xcertplay.airplay
+ 
+ import android.os.Build
++import org.conscrypt.Conscrypt
+ import org.bouncycastle.crypto.Digest
+ import org.bouncycastle.crypto.digests.SHA512Digest
+ import org.bouncycastle.crypto.generators.HKDFBytesGenerator
+@@ -30,6 +31,12 @@ object AirPlayCrypto {
+     private val random = SecureRandom()
+     // Android's Conscrypt name first, then a desktop JDK's (unit tests).
+     private val PLATFORM_CHACHA_NAMES = listOf("ChaCha20/Poly1305/NoPadding", "ChaCha20-Poly1305")
++    private val legacyNativeProvider by lazy {
++        // A missing/unsupported native ABI must retain the authenticated Java fallback.
++        try { if (Build.VERSION.SDK_INT in 23..27) Conscrypt.newProvider() else null }
++        catch (_: LinkageError) { null }
++        catch (_: Exception) { null }
++    }
+ 
+     /**
+      * The platform's ChaCha20-Poly1305 (Conscrypt on Android), used before BouncyCastle's Java one;
+@@ -47,7 +54,11 @@ object AirPlayCrypto {
+     // ThreadLocal.withInitial needs API 26.
+     private val platformState = object : ThreadLocal<PlatformChacha?>() {
+         override fun initialValue(): PlatformChacha? =
+-            PLATFORM_CHACHA_NAMES.firstNotNullOfOrNull { runCatching { Cipher.getInstance(it) }.getOrNull() }
++            PLATFORM_CHACHA_NAMES.firstNotNullOfOrNull { name ->
++                legacyNativeProvider?.let { provider ->
++                    runCatching { Cipher.getInstance(name, provider) }.getOrNull()
++                } ?: runCatching { Cipher.getInstance(name) }.getOrNull()
++            }
+                 ?.let(::PlatformChacha)
+     }
+ 
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/hud/BydAmbientLightClient.kt b/shared/src/main/java/com/shilapi/xcertplay/hud/BydAmbientLightClient.kt
+index 23eafc84af56a8a3c2d9fdb37754ca0c9f9beb2e..59cbf1278bb375adee3b0edf2a448eb529e23e23 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/hud/BydAmbientLightClient.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/hud/BydAmbientLightClient.kt
+@@ -5,7 +5,7 @@ import android.util.Log
+ import com.shilapi.xcertplay.adb.AdbKeys
+ import com.shilapi.xcertplay.adb.LocalAdb
+ import java.security.SecureRandom
+-import java.util.concurrent.CompletableFuture
++import java9.util.concurrent.CompletableFuture
+ import java.util.concurrent.ScheduledFuture
+ import java.util.concurrent.ScheduledThreadPoolExecutor
+ import java.util.concurrent.TimeUnit
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/AmbientLampSession.kt b/shared/src/main/java/com/shilapi/xcertplay/media/AmbientLampSession.kt
+index 9f4db1153b32a468f6627ff9b8e60c67a1909724..97e14bd8371dddd0f0f5cb5bfc8aeff39e97bc7b 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/AmbientLampSession.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/AmbientLampSession.kt
+@@ -1,7 +1,7 @@
+ package com.shilapi.xcertplay.media
+ 
+ import com.shilapi.xcertplay.hud.BydAmbientLightPolicy
+-import java.util.concurrent.CompletableFuture
++import java9.util.concurrent.CompletableFuture
+ 
+ /** Serialized lamp lifecycle used by the real controller and fake-client tests. No audio or timer thread here. */
+ internal class AmbientLampSession(
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/AmbientMusicController.kt b/shared/src/main/java/com/shilapi/xcertplay/media/AmbientMusicController.kt
+index aaf1e8ace96dedeb0b9b6bc3ec2894d9982e2299..23815669c181638734112b9a100b9cdec06e2ab2 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/AmbientMusicController.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/AmbientMusicController.kt
+@@ -155,8 +155,8 @@ object AmbientMusicController {
+     }
+ 
+     /** Checks existing authorization and lamp readback only; never asks for ADB or writes a lamp. */
+-    fun checkSupport(context: Context): java.util.concurrent.CompletableFuture<Boolean> {
+-        val result = java.util.concurrent.CompletableFuture<Boolean>()
++    fun checkSupport(context: Context): java9.util.concurrent.CompletableFuture<Boolean> {
++        val result = java9.util.concurrent.CompletableFuture<Boolean>()
+         executor.execute {
+             if (lampSession.isReady()) {
+                 result.complete(true)
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+index 44e946c8950bdb5fd217eb2e51f2e797d147d3e2..ff6f36a6c7dfcee25d9072a03b5e58656c7d1d5c 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+@@ -247,7 +247,7 @@ class AndroidMediaSink(
+     private val videoReleasedListeners = ArrayList<() -> Unit>()
+     // Closed decoders whose workers may still hold a codec on a surface until they exit; a surface
+     // detach also waits for them.
+-    private val closingVideoDecoders = ConcurrentHashMap.newKeySet<VideoDecoder>()
++    private val closingVideoDecoders: MutableSet<VideoDecoder> = ConcurrentHashMap.newKeySet()
+     // How long a surface detach waits for decoders to confirm, and then for an unconfirmed one to exit
+     // after it is closed. Variables so tests can shorten them.
+     internal var detachTimeoutNanos = 2_000_000_000L
+@@ -1692,6 +1692,10 @@ private fun MediaFormat.intOrNull(key: String): Int? =
+         }
+     }
+ 
++/** Android6 has no underrun counter; queued PCM/playback-head checks remain active. */
++internal fun compatibleUnderrunCount(track: AudioTrack): Int =
++    if (android.os.Build.VERSION.SDK_INT >= 24) track.underrunCount else 0
++
+ /** Decodes AAC-LC/Opus to PCM and plays it, or plays wired LPCM directly. */
+ private class AudioRenderer(
+     val format: AudioFormat,
+@@ -2334,7 +2338,7 @@ private class AudioRenderer(
+ 
+     private fun startPlayback(track: AudioTrack) {
+         diagnosticStage = "track-play"
+-        underrunsAtPlaybackStart = track.underrunCount
++        underrunsAtPlaybackStart = compatibleUnderrunCount(track)
+         track.play()
+         playbackStarted = true
+         reportNavigationPlayback(track)
+@@ -2355,7 +2359,7 @@ private class AudioRenderer(
+     private fun maintainPlaybackBuffer() {
+         val track = track ?: return
+         if (bufferProgress.shouldRebuffer(mappedChannel == AudioChannel.MEDIA, playbackStarted,
+-                track.underrunCount > underrunsAtPlaybackStart, queue.isEmpty(), track.playbackHeadPosition,
++                compatibleUnderrunCount(track) > underrunsAtPlaybackStart, queue.isEmpty(), track.playbackHeadPosition,
+                 startThresholdBytes / 2L)) {
+             // The hardware buffer has starved below the recovery floor. Pause without flushing
+             // or discarding PCM, then use the configured start threshold again when music resumes.
+@@ -2380,7 +2384,7 @@ private class AudioRenderer(
+         val now = System.nanoTime()
+         if (statsWindowStartNs == 0L) statsWindowStartNs = now
+         if (!force && now - statsWindowStartNs < STATS_WINDOW_NS) return
+-        val underruns = track?.underrunCount ?: 0
++        val underruns = track?.let(::compatibleUnderrunCount) ?: 0
+         val lastRx = lastArrivalNs.get()
+         val currentTrack = track
+         val playbackHeadFrames = currentTrack?.playbackHeadPosition
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt b/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt
+index 51ab3b80b1845795a36f456acd74883257e5ee86..9455b54acbe5104f2531ebe56777f44ee8391d81 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt
+@@ -528,7 +528,7 @@ internal class CaptureClock(private val sampleRate: Int) {
+         samplesRead += samples
+         lastReadSamples = samples
+         val now = System.nanoTime()
+-        val stamped = runCatching {
++        val stamped = android.os.Build.VERSION.SDK_INT >= 24 && runCatching {
+             recorder.getTimestamp(timestamp, android.media.AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS
+         }.getOrDefault(false)
+         lastReadEndNs = if (stamped && timestamp.nanoTime > 0) {
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/CarHotspotTethering.kt b/shared/src/main/java/com/shilapi/xcertplay/network/CarHotspotTethering.kt
+index aa203e183a9fbb4ce909ff2b515e216457ddcb4f..9cbc9a00fdfa392ac7229a932b03f091353eaf16 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/CarHotspotTethering.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/CarHotspotTethering.kt
+@@ -2,12 +2,16 @@ package com.shilapi.xcertplay.network
+ 
+ import android.content.Context
+ import android.net.ConnectivityManager
++import android.net.wifi.WifiConfiguration
++import android.net.wifi.WifiManager
++import android.os.Build
+ import android.os.Bundle
+ import android.os.ResultReceiver
+ import android.provider.Settings
+ import com.shilapi.xcertplay.adb.AdbKeys
+ import com.shilapi.xcertplay.adb.LocalAdb
+ import java.lang.reflect.InvocationTargetException
++import java.io.IOException
+ import java.util.concurrent.atomic.AtomicInteger
+ import java.util.concurrent.atomic.AtomicReference
+ import java.util.concurrent.TimeUnit
+@@ -38,6 +42,15 @@ object CarHotspotTethering {
+         val observedAdbState = AtomicReference<Boolean?>()
+         val startReflection: (ResultReceiver) -> Unit = { receiver ->
+             try {
++                requestSavedHotspotStart(Build.VERSION.SDK_INT, legacy = {
++                    val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
++                        ?: throw IOException("WifiManager is unavailable")
++                    // Android 6 has no ConnectivityService.startTethering callback API.
++                    // Null preserves the car's saved SSID/password; never invent or replace them.
++                    WifiManager::class.java.getMethod("setWifiApEnabled",
++                        WifiConfiguration::class.java, Boolean::class.javaPrimitiveType)
++                        .invoke(wifi, null, true) == true
++                }, modern = {
+                 val service = ConnectivityManager::class.java.getDeclaredField("mService")
+                     .apply { isAccessible = true }
+                     .get(context.getSystemService(ConnectivityManager::class.java))
+@@ -46,6 +59,7 @@ object CarHotspotTethering {
+                     "startTethering", Int::class.javaPrimitiveType, ResultReceiver::class.java,
+                     Boolean::class.javaPrimitiveType, String::class.java,
+                 ).invoke(service, 0, receiver, false, context.packageName)
++                })
+             } catch (error: Exception) {
+                 // #616: the report did not say which start path failed.
+                 log("car hotspot: Android start request failed ${describe(error)}")
+@@ -205,3 +219,10 @@ object CarHotspotTethering {
+         }
+     }
+ }
++
++/** An accepted request is not readiness: enableUntil still observes the real AP state. */
++internal fun requestSavedHotspotStart(sdk: Int, legacy: () -> Boolean, modern: () -> Unit) {
++    if (sdk <= 23) {
++        if (!legacy()) throw IOException("Android 6 rejected the saved car hotspot start request")
++    } else modern()
++}
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/CarPlayBonjour.kt b/shared/src/main/java/com/shilapi/xcertplay/network/CarPlayBonjour.kt
+index c225a54010a2dffdf805ae43dd90c024208715a7..5745baf88ea83749a6276a1cf94dff66e933df54 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/CarPlayBonjour.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/CarPlayBonjour.kt
+@@ -142,10 +142,13 @@ class CarPlayBonjour(
+     private val useInterfaceMdns: Boolean = false,
+     private val onEvent: (CarPlayBonjourEvent) -> Unit = {},
+     additionalAddresses: List<InetAddress> = emptyList(),
++    private val onDiagnostic: (String) -> Unit = {},
+ ) : Closeable {
++    private val appContext = context.applicationContext ?: context
++    @Volatile private var interfaceMdnsActive = useInterfaceMdns
+     // Interface-bound mDNS does not need Android's NSD service, which may be absent on some head units.
+     private val nsdManager: NsdManager by lazy {
+-        (context.applicationContext ?: context)
++        appContext
+             .getSystemService(Context.NSD_SERVICE) as? NsdManager
+             ?: throw IOException("Android NSD service is unavailable")
+     }
+@@ -169,8 +172,8 @@ class CarPlayBonjour(
+         "bonjourAdded=${addedCount.get()} bonjourResolved=${resolvedCount.get()} " +
+             "bonjourAddressMismatch=${addressMismatchCount.get()} connectProbes=${probeCount.get()} " +
+             "connectProbe2xx=${successfulProbeCount.get()} lastProbe=${lastProbe.get()} " +
+-            "mdnsFamilies=$publishedFamilies"
+-    private val multicastLock = (context.applicationContext ?: context)
++            "mdnsFamilies=$publishedFamilies discoveryBackend=${if (interfaceMdnsActive) "interface" else "system_nsd"}"
++    private val multicastLock = appContext
+         .getSystemService(WifiManager::class.java)
+         .createMulticastLock("carplay-bonjour").apply { setReferenceCounted(false) }
+ 
+@@ -224,10 +227,13 @@ class CarPlayBonjour(
+     }
+ 
+     private val registrationListener = object : NsdManager.RegistrationListener {
+-        override fun onServiceRegistered(serviceInfo: NsdServiceInfo) = Unit
++        override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
++            if (!closed) report("system NSD registration confirmed")
++        }
+ 
+         override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+             Log.w(TAG, "AirPlay NSD registration failed code=$errorCode")
++            if (!closed) report("system NSD registration failed code=$errorCode")
+         }
+ 
+         override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) = Unit
+@@ -240,6 +246,7 @@ class CarPlayBonjour(
+     private val discoveryListener = object : NsdManager.DiscoveryListener {
+         override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+             Log.w(TAG, "CarPlay control discovery failed code=$errorCode")
++            if (!closed) report("system NSD discovery failed code=$errorCode")
+         }
+ 
+         override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+@@ -278,28 +285,40 @@ class CarPlayBonjour(
+                     requireNotNull(localAdvertisedAddress) {
+                         "Interface mDNS requires a local advertised address"
+                     }
+-                    // A JmDNS instance joins only its address family's multicast group.
+-                    for (address in advertisedAddresses) {
+-                        val dns = JmDNS.create(address, "carplay-${config.deviceId.replace(":", "")}")
+-                        interfaceMdns.add(dns)
+-                        dns.addServiceListener("$CARPLAY_CONTROL_SERVICE_TYPE.local.", interfaceListener)
+-                        dns.registerService(ServiceInfo.create(
+-                            "$AIRPLAY_SERVICE_TYPE.local.", config.deviceName, config.port,
+-                            0, 0, CarPlayBonjourProtocol.airPlayTxtRecords(config, identity),
+-                        ))
+-                    }
+-                    publishedFamilies = advertisedAddresses.joinToString(",") {
+-                        if (it is Inet4Address) "IPv4" else "IPv6"
++                    try {
++                        // A JmDNS instance joins only its address family's multicast group.
++                        for (address in advertisedAddresses) {
++                            report("interface mDNS create family=${if (address is Inet4Address) "IPv4" else "IPv6"} udpPort=5353")
++                            val dns = JmDNS.create(address, "carplay-${config.deviceId.replace(":", "")}")
++                            interfaceMdns.add(dns)
++                            dns.addServiceListener("$CARPLAY_CONTROL_SERVICE_TYPE.local.", interfaceListener)
++                            dns.registerService(ServiceInfo.create(
++                                "$AIRPLAY_SERVICE_TYPE.local.", config.deviceName, config.port,
++                                0, 0, CarPlayBonjourProtocol.airPlayTxtRecords(config, identity),
++                            ))
++                        }
++                        publishedFamilies = advertisedAddresses.joinToString(",") {
++                            if (it is Inet4Address) "IPv4" else "IPv6"
++                        }
++                    } catch (error: IOException) {
++                        if (!mdnsAddressInUse(error)) throw error
++                        // A vendor's system mDNS daemon can own 5353 exclusively. Recreating our
++                        // socket or switching IP families cannot release somebody else's socket.
++                        // Close only our registries, then ask Android NSD to use its existing daemon.
++                        val owned = interfaceMdns.toList()
++                        interfaceMdns.clear()
++                        for (dns in owned) dns.close()
++                        seenServices.clear()
++                        interfaceServices.clear()
++                        discoveryEvents.clear()
++                        interfaceMdnsActive = false
++                        publishedFamilies = "system_managed"
++                        report("interface mDNS bind conflict udpPort=5353; fallback=system_nsd " +
++                            "${MdnsPortDiagnostics.snapshot(appContext)}")
++                        startSystemNsd()
+                     }
+                 } else {
+-                    registerAirPlay()
+-                    registrationRequested = true
+-                    nsdManager.discoverServices(
+-                        CARPLAY_CONTROL_SERVICE_TYPE,
+-                        NsdManager.PROTOCOL_DNS_SD,
+-                        discoveryListener,
+-                    )
+-                    discoveryRequested = true
++                    startSystemNsd()
+                 }
+                 worker = Thread(::runWorker, WORKER_NAME).apply {
+                     isDaemon = true
+@@ -326,6 +345,19 @@ class CarPlayBonjour(
+         }
+     }
+ 
++    private fun startSystemNsd() {
++        report("system NSD start requested interfaceBinding=not_guaranteed")
++        registerAirPlay()
++        registrationRequested = true
++        nsdManager.discoverServices(CARPLAY_CONTROL_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
++        discoveryRequested = true
++    }
++
++    private fun report(message: String) {
++        // Optional diagnostics cannot turn a recoverable socket conflict into another failure.
++        runCatching { onDiagnostic(message) }
++    }
++
+     override fun close() {
+         val workerToJoin: Thread?
+         val dnsToClose: List<JmDNS>
+@@ -393,7 +425,7 @@ class CarPlayBonjour(
+ 
+     private fun runWorker() {
+         while (!closed) {
+-            if (useInterfaceMdns) {
++            if (interfaceMdnsActive) {
+                 try {
+                     while (true) emit(discoveryEvents.poll() ?: break)
+                     val (endpoint, address) = interfaceServices.poll(
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/HotspotJoinCapability.kt b/shared/src/main/java/com/shilapi/xcertplay/network/HotspotJoinCapability.kt
+index 3d1945825b1de3bd24855586716f663b8f882c46..decbb68b6bcce8c4ddabd0816abb697b6ce611ad 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/HotspotJoinCapability.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/HotspotJoinCapability.kt
+@@ -58,7 +58,7 @@ internal object HotspotJoinCapability {
+                     try {
+                         data.enforceInterface(DESCRIPTOR)
+                         val capability = data.readTypedObject(creator) ?: return true
+-                        data.enforceNoDataAvail()
++                        if (android.os.Build.VERSION.SDK_INT >= 33) data.enforceNoDataAvail()
+                         val supported = capabilityType.getMethod("areFeaturesSupported", Long::class.javaPrimitiveType)
+                             .invoke(capability, feature) == true
+                         val channels = capabilityType.getMethod("getSupportedChannelList", Int::class.javaPrimitiveType)
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/LegacyWirelessAddresses.kt b/shared/src/main/java/com/shilapi/xcertplay/network/LegacyWirelessAddresses.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..c64073daa4f7f9100b1131669856859743626a61
+--- /dev/null
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/LegacyWirelessAddresses.kt
+@@ -0,0 +1,12 @@
++package com.shilapi.xcertplay.network
++
++import java.net.Inet4Address
++import java.net.InetAddress
++
++/** Old Android multicast sockets can collide when JmDNS binds IPv4 and IPv6 together.
++ * Keep one known-working family on API23; do not erase IPv6-only networks. */
++internal fun legacyWirelessAddresses(addresses: List<InetAddress>, sdk: Int): List<InetAddress> {
++    if (sdk > 23) return addresses
++    val ipv4 = addresses.filterIsInstance<Inet4Address>()
++    return if (ipv4.isNotEmpty()) ipv4 else addresses
++}
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotInterfaces.kt b/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotInterfaces.kt
+index 4e4f0c8c39312a202c011a041c974a4509803077..1dccc51186568ce203f477ddd33564a9fe06f029 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotInterfaces.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotInterfaces.kt
+@@ -22,7 +22,7 @@ internal class ManualHotspotInterfaces(
+     private var lastLegacyDiagnostic: String? = null
+ 
+     fun sample(): HotspotNetworkSnapshot {
+-        val ap = publicTethering?.interfaces ?: legacyApInterfaces()
++        val ap = (if (Build.VERSION.SDK_INT >= 36) publicTethering?.interfaces else null) ?: legacyApInterfaces()
+         val before = runCatching { connectivity?.activeNetwork }
+         val upstreams = runCatching {
+             checkNotNull(connectivity)
+@@ -73,7 +73,7 @@ internal class ManualHotspotInterfaces(
+         ap
+     }.getOrNull()
+ 
+-    override fun close() { publicTethering?.close() }
++    override fun close() { if (Build.VERSION.SDK_INT >= 36) publicTethering?.close() }
+ 
+     @RequiresApi(36)
+     private class PublicTethering(context: Context) : Closeable {
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/MdnsPortDiagnostics.kt b/shared/src/main/java/com/shilapi/xcertplay/network/MdnsPortDiagnostics.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d30a4828d82a24d15274c4ccc14a8613d0b6c8c
+--- /dev/null
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/MdnsPortDiagnostics.kt
+@@ -0,0 +1,40 @@
++package com.shilapi.xcertplay.network
++
++import android.content.Context
++import java.io.File
++import java.net.SocketException
++
++internal fun mdnsAddressInUse(error: Throwable): Boolean =
++    generateSequence(error) { it.cause }.take(8).any {
++        it is SocketException &&
++            (it.message.orEmpty().contains("EADDRINUSE") ||
++                it.message.orEmpty().contains("Address already in use", ignoreCase = true))
++    }
++
++/** Read only the mDNS port's UID/inode, never IP addresses or unrelated socket entries.
++ * Modern Android may deny procfs; missing evidence remains unknown, not 'port is free'. */
++internal object MdnsPortDiagnostics {
++    fun snapshot(context: Context? = null): String = listOf("udp", "udp6").joinToString(" ") { family ->
++        val lines = runCatching { File("/proc/net/$family").readLines() }.getOrNull()
++        if (lines == null) "$family=unreadable" else "$family=${owners(lines) { uid ->
++            runCatching { context?.packageManager?.getPackagesForUid(uid)?.toList().orEmpty() }.getOrDefault(emptyList())
++        }}"
++    }
++
++    internal fun owners(lines: List<String>, packagesForUid: (Int) -> List<String> = { emptyList() }): String {
++        val owners = lines.mapNotNull { line ->
++            val fields = line.trim().split(Regex("\\s+"))
++            if (fields.size < 10 || fields[1].substringAfterLast(':').toIntOrNull(16) != 5353) null
++            else {
++                val uid = fields[7].toIntOrNull()
++                val inode = fields[9].toLongOrNull()
++                if (uid == null || inode == null) null else {
++                    val packages = packagesForUid(uid).filter { it.matches(Regex("[A-Za-z0-9_.]+")) }
++                        .distinct().take(4).joinToString("+")
++                    "uid=$uid/inode=$inode" + if (packages.isEmpty()) "" else "/packages=$packages"
++                }
++            }
++        }.distinct().take(8)
++        return if (owners.isEmpty()) "no_visible_owner" else owners.joinToString(",")
++    }
++}
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+index b4c05198ac24dd12ce897d0813ce67536369f461..9bd4c12e55036fce07e59285c254aac669955edd 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+@@ -21,6 +21,7 @@ import android.os.IBinder
+ import android.os.Looper
+ import android.provider.Settings
+ import android.util.Log
++import com.shilapi.xcertplay.network.legacyWirelessAddresses
+ import com.shilapi.xcertplay.airplay.AirPlayListenerIdentity
+ import com.shilapi.xcertplay.airplay.AirPlayTcpAccepted
+ import com.shilapi.xcertplay.airplay.AirPlayConfig
+@@ -623,8 +624,10 @@ class CarPlayController(
+     }
+ 
+     override fun close() {
++        val teardownToken: CountDownLatch
+         synchronized(wirelessResourceLock) {
+             if (closed) return
++            teardownToken = ControllerTeardownGate.process.begin()
+             closed = true
+             // Order cancellation with address-preference commits and generation replacement.
+             wirelessGeneration.incrementAndGet()
+@@ -681,6 +684,7 @@ class CarPlayController(
+                             "executorTerminated=$executorTerminated",
+                     )
+                     teardownComplete.countDown()
++                    ControllerTeardownGate.process.complete(teardownToken)
+                 }
+             },
+             "xcertplay-controller-teardown",
+@@ -1201,6 +1205,12 @@ class CarPlayController(
+     private fun runWireless(generation: Int) {
+         try {
+             debugLog("wireless bring-up generation=$generation starting")
++            val handoffStarted = System.nanoTime()
++            if (!ControllerTeardownGate.process.await(8_000)) {
++                throw IOException("Previous CarPlay connection is still closing; retry after cleanup")
++            }
++            connectionDiagnostic("previous controller cleanup completed elapsedMs=${elapsedMillis(handoffStarted)}")
++            if (isStaleWirelessRun(generation)) return
+             closeWirelessStack(generation = generation)
+             if (
+                 closed ||
+@@ -1247,7 +1257,7 @@ class CarPlayController(
+             wirelessConnectionProof.begin(generation) {
+                 if (!isStaleWirelessRun(generation)) startedHotspot?.onCarPlayConfirmed()
+             }
+-            val preferredFamily = HotspotAddressPolicy.parseFamily(
++            val preferredFamily = if (Build.VERSION.SDK_INT <= 23) null else HotspotAddressPolicy.parseFamily(
+                 appContext.getSharedPreferences(WIRELESS_PREFS, Context.MODE_PRIVATE)
+                     .getString(HOTSPOT_FAMILY_PREFERENCE_KEY, null),
+             )
+@@ -1257,7 +1267,9 @@ class CarPlayController(
+                 pause = Thread::sleep,
+                 log = { if (!isStaleWirelessRun(generation)) debugLog(it) },
+             )
+-            val candidates = addressRecovery.awaitCandidates(hotspotCandidates(hotspotInfo), preferredFamily)
++            val candidates = legacyWirelessAddresses(
++                addressRecovery.awaitCandidates(hotspotCandidates(hotspotInfo), preferredFamily), Build.VERSION.SDK_INT,
++            )
+             val hostAddress = HotspotAddressPolicy.select(candidates, preferredFamily)
+                 ?: hotspotInfo.hostAddress
+                 ?: throw IOException(
+@@ -1348,7 +1360,7 @@ class CarPlayController(
+                         listener = wirelessSessionListener(generation, watchdog),
+                         listenerIdentity = watchdog.listener,
+                         media = media,
+-                        additionalBindAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
++                        additionalBindAddresses = candidates.filter { it != hostAddress },
+                     )
+                 ) {
+                     CarPlayVpnService.AttachResult.Started -> Unit
+@@ -1381,7 +1393,8 @@ class CarPlayController(
+                 // or IPv6 while the listener/probe was bound to the AP's IPv4 address.
+                 useInterfaceMdns = true,
+                 onEvent = { event -> debugLog("wireless bonjour: ${event.diagnosticSummary()}") },
+-                additionalAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
++                additionalAddresses = candidates.filter { it != hostAddress },
++                onDiagnostic = { debugLog("wireless bonjour: $it") },
+             )
+             synchronized(wirelessResourceLock) {
+                 if (isStaleWirelessRun(generation)) return
+@@ -1391,7 +1404,8 @@ class CarPlayController(
+             }
+             startedBonjour = bonjourClient
+             diagnostics.start()
+-            debugLog("wireless Bonjour services started mode=interface iface=${hotspotInfo.interfaceName ?: "unknown"}")
++            debugLog("wireless Bonjour services started iface=${hotspotInfo.interfaceName ?: "unknown"} " +
++                bonjourClient.diagnosticSnapshot())
+             if (isStaleWirelessRun(generation)) {
+                 return
+             }
+@@ -1801,6 +1815,12 @@ class CarPlayController(
+         }
+ 
+     private fun closeBluetoothBootstrapTransport() {
++        // Close the actual socket first: a link worker may still be blocked in Bluetooth I/O.
++        // Waiting for that worker before breaking its I/O can retain the old connection's ports.
++        val activeSocket = bluetoothSocket
++        bluetoothSocket = null
++        if (activeSocket != null) closeBestEffort("wireless Bluetooth socket") { activeSocket.close() }
++
+         val activeCsm = csm
+         csm = null
+         if (activeCsm != null) closeBestEffort("wireless CSM") { activeCsm.close() }
+@@ -1809,9 +1829,6 @@ class CarPlayController(
+         bluetoothStream = null
+         if (activeStream != null) closeBestEffort("wireless RFCOMM stream") { activeStream.close() }
+ 
+-        val activeSocket = bluetoothSocket
+-        bluetoothSocket = null
+-        if (activeSocket != null) closeBestEffort("wireless Bluetooth socket") { activeSocket.close() }
+     }
+ 
+     private fun startIphone() {
+@@ -2673,6 +2690,10 @@ class CarPlayController(
+ 
+     private fun flipWirelessAddressFamily(generation: Int) = synchronized(wirelessResourceLock) {
+         if (isStaleWirelessRun(generation)) return@synchronized
++        if (Build.VERSION.SDK_INT <= 23) {
++            debugLog("wireless address family flip skipped: legacy single-family multicast policy")
++            return@synchronized
++        }
+         val published = wirelessPublishedAddress
+         val next = published?.let { wirelessAddressRecovery?.nextFamily(it) }
+         val from = published?.let {
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/orchestration/ControllerTeardownGate.kt b/shared/src/main/java/com/shilapi/xcertplay/orchestration/ControllerTeardownGate.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d1f72a8aa03b814619508eadf6f2b53b67fe13d
+--- /dev/null
++++ b/shared/src/main/java/com/shilapi/xcertplay/orchestration/ControllerTeardownGate.kt
+@@ -0,0 +1,31 @@
++package com.shilapi.xcertplay.orchestration
++
++import java.util.concurrent.CountDownLatch
++import java.util.concurrent.TimeUnit
++
++/** Process-wide handoff between Activity instances. A new host must not reuse the old radio stack
++ * merely because the old Activity has disappeared or its UI wait budget expired. */
++internal class ControllerTeardownGate {
++    private val pending = mutableSetOf<CountDownLatch>()
++
++    @Synchronized fun begin(): CountDownLatch = CountDownLatch(1).also { pending.add(it) }
++
++    @Synchronized fun complete(token: CountDownLatch) {
++        pending.remove(token)
++        token.countDown()
++    }
++
++    fun await(timeoutMillis: Long): Boolean {
++        require(timeoutMillis >= 0)
++        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
++        while (true) {
++            val snapshot = synchronized(this) { pending.toList() }
++            if (snapshot.isEmpty()) return true
++            for (token in snapshot) {
++                if (!token.await((deadline - System.nanoTime()).coerceAtLeast(0), TimeUnit.NANOSECONDS)) return false
++            }
++        }
++    }
++
++    companion object { val process = ControllerTeardownGate() }
++}
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/telecom/PhoneAudioRoute.kt b/shared/src/main/java/com/shilapi/xcertplay/telecom/PhoneAudioRoute.kt
+index 3ccc1dd57b03a75fed6c73b527b2e6b0cc3da3ed..9635fc5e8d60ab863202053981cbd69db2993a40 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/telecom/PhoneAudioRoute.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/telecom/PhoneAudioRoute.kt
+@@ -196,7 +196,7 @@ object PhoneAudioRoute {
+             watcher = VoipCallWatcher(context) { active -> voipApp(active) }.also { it.start() }
+             Log.i(TAG, "watching for voice-over-IP calls in other apps")
+         } else if (!wantWatcher && watcher != null) {
+-            watcher?.stop()
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) watcher?.stop()
+             watcher = null
+             voipApp(false)
+         }
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/transport/LockdownTlsEngineFactory.kt b/shared/src/main/java/com/shilapi/xcertplay/transport/LockdownTlsEngineFactory.kt
+index d9a57ead04c3bafb67d36f23cf61255bf192f8b6..8aca32516d6f8300d8871e40cdffc41967693708 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/transport/LockdownTlsEngineFactory.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/transport/LockdownTlsEngineFactory.kt
+@@ -48,7 +48,11 @@ object LockdownTlsEngineFactory {
+             }
+             return context.createSSLEngine(PEER_HOST, PEER_PORT).apply {
+                 useClientMode = true
+-                sslParameters = sslParameters.apply { endpointIdentificationAlgorithm = null }
++                // API23 has no endpoint-identification setter and its default is
++                // already null. The existing USB trust manager remains unchanged.
++                if (android.os.Build.VERSION.SDK_INT >= 24) {
++                    sslParameters = sslParameters.apply { endpointIdentificationAlgorithm = null }
++                }
+             }
+         } finally {
+             password.fill('\u0000')
+diff --git a/shared/src/main/jni/Application.mk b/shared/src/main/jni/Application.mk
+index e625aeae618762e329237d0b6f79e02469030062..23f341f48a8ea76b8ab1c354793ded081059e1ae 100644
+--- a/shared/src/main/jni/Application.mk
++++ b/shared/src/main/jni/Application.mk
+@@ -1,2 +1,2 @@
+-APP_PLATFORM := android-25
++APP_PLATFORM := android-23
+ APP_STL := none
+diff --git a/shared/src/main/res/values-v26/api23_compat.xml b/shared/src/main/res/values-v26/api23_compat.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..bcdb36666286d180f1231f9d08bebfc94196aec4
+--- /dev/null
++++ b/shared/src/main/res/values-v26/api23_compat.xml
+@@ -0,0 +1,3 @@
++<resources>
++    <bool name="diplay_phone_audio_service_supported">true</bool>
++</resources>
+diff --git a/shared/src/main/res/values/api23_compat.xml b/shared/src/main/res/values/api23_compat.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..460bdc2e1feeb48b5f761b075fb3af905674fab7
+--- /dev/null
++++ b/shared/src/main/res/values/api23_compat.xml
+@@ -0,0 +1,4 @@
++<resources>
++    <!-- Self-managed Telecom integration is optional and only available from API26. -->
++    <bool name="diplay_phone_audio_service_supported">false</bool>
++</resources>
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/adb/LocalAdbApprovalTest.kt b/shared/src/test/java/com/shilapi/xcertplay/adb/LocalAdbApprovalTest.kt
+index 353326142caab9db9e9949cbfd99450e652dd407..3c7750bdffbd55c7211c060d68c05b0aebd3e69d 100644
+--- a/shared/src/test/java/com/shilapi/xcertplay/adb/LocalAdbApprovalTest.kt
++++ b/shared/src/test/java/com/shilapi/xcertplay/adb/LocalAdbApprovalTest.kt
+@@ -3,7 +3,7 @@ package com.shilapi.xcertplay.adb
+ import java.net.ServerSocket
+ import java.net.Socket
+ import java.security.KeyPairGenerator
+-import java.util.concurrent.CompletableFuture
++import java9.util.concurrent.CompletableFuture
+ import java.util.concurrent.CopyOnWriteArrayList
+ import java.util.concurrent.CountDownLatch
+ import java.util.concurrent.TimeUnit
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayCryptoAndroidCompatibilityTest.kt b/shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayCryptoAndroidCompatibilityTest.kt
+index b9df326e9d5360fe6b354fd029117313ada328a7..1e2f187254485bf8e5ff4dac9c5e161c4a0701cb 100644
+--- a/shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayCryptoAndroidCompatibilityTest.kt
++++ b/shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayCryptoAndroidCompatibilityTest.kt
+@@ -10,8 +10,28 @@ import org.robolectric.RobolectricTestRunner
+ import org.robolectric.annotation.Config
+ 
+ @RunWith(RobolectricTestRunner::class)
+-@Config(sdk = [28, 30], manifest = Config.NONE)
++@Config(sdk = [23, 28, 30], manifest = Config.NONE)
+ class AirPlayCryptoAndroidCompatibilityTest {
++    @Test
++    @Config(sdk = [23])
++    fun android6NativeCipherMatchesJavaAndRejectsBadTags() {
++        val key = ByteArray(32) { it.toByte() }
++        val aad = byteArrayOf(3, 7, 9)
++        for (size in listOf(0, 1, 63, 64, 65, 1400, 65_537, 500_000)) {
++            val nonce = AirPlayCrypto.nonce64(size.toLong())
++            val plain = ByteArray(size) { (it * 31).toByte() }
++            val sealed = AirPlayCrypto.chachaSeal(key, nonce, plain, aad)
++            assertEquals("Conscrypt", AirPlayCrypto.chachaImplementation)
++            assertArrayEquals(AirPlayCrypto.chachaSealBouncyCastle(key, nonce, plain, aad), sealed)
++            assertArrayEquals(plain, AirPlayCrypto.chachaOpen(key, nonce, sealed, aad))
++            val corrupt = sealed.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
++            try {
++                AirPlayCrypto.chachaOpen(key, nonce, corrupt, aad)
++                org.junit.Assert.fail("modified authentication tag accepted")
++            } catch (_: javax.crypto.AEADBadTagException) { }
++            assertArrayEquals(plain, AirPlayCrypto.chachaOpen(key, nonce, sealed, aad))
++        }
++    }
+     @Test fun olderSupportedAndroidDoesNotStageIntoDirectBuffers() {
+         roundTrip()
+         assertEquals(0, retainedCapacity("input"))
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/media/AmbientLampSessionTest.kt b/shared/src/test/java/com/shilapi/xcertplay/media/AmbientLampSessionTest.kt
+index 7740e8a93f9eca892fba5e3011fed2784c5e55e3..5770a71bdb9c85e03cd4264b01209ee84d478367 100644
+--- a/shared/src/test/java/com/shilapi/xcertplay/media/AmbientLampSessionTest.kt
++++ b/shared/src/test/java/com/shilapi/xcertplay/media/AmbientLampSessionTest.kt
+@@ -1,7 +1,7 @@
+ package com.shilapi.xcertplay.media
+ 
+ import com.shilapi.xcertplay.hud.BydAmbientLightPolicy
+-import java.util.concurrent.CompletableFuture
++import java9.util.concurrent.CompletableFuture
+ import org.junit.Assert.*
+ import org.junit.Test
+ 
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/media/AmbientMusicEnvelopeTest.kt b/shared/src/test/java/com/shilapi/xcertplay/media/AmbientMusicEnvelopeTest.kt
+index ac1a95b03b39e68750ab0921afadb263c512a7f6..7ea4b64bcfe971cf2d03f52a7aadb76f8deef817 100644
+--- a/shared/src/test/java/com/shilapi/xcertplay/media/AmbientMusicEnvelopeTest.kt
++++ b/shared/src/test/java/com/shilapi/xcertplay/media/AmbientMusicEnvelopeTest.kt
+@@ -6,7 +6,7 @@ import org.junit.Test
+ class AmbientMusicEnvelopeTest {
+     @Test fun latestValueCancellationDoesNotFailSession() {
+         assertTrue(ambientApplyCancelled(java.util.concurrent.CancellationException("superseded")))
+-        assertTrue(ambientApplyCancelled(java.util.concurrent.CompletionException(java.util.concurrent.CancellationException())))
++        assertTrue(ambientApplyCancelled(java9.util.concurrent.CompletionException(java.util.concurrent.CancellationException())))
+         assertFalse(ambientApplyCancelled(IllegalStateException("real apply failure")))
+     }
+     @Test fun shortAlreadyPlayedPeakSurvivesSlowLampPollWithoutFutureLeak() {
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/network/CarHotspotTetheringTest.kt b/shared/src/test/java/com/shilapi/xcertplay/network/CarHotspotTetheringTest.kt
+index d55de444ddb60470b10987bbf5638855f6aa7496..b27241fbb6a0514f7eef9f2f5ef59358f65a2f24 100644
+--- a/shared/src/test/java/com/shilapi/xcertplay/network/CarHotspotTetheringTest.kt
++++ b/shared/src/test/java/com/shilapi/xcertplay/network/CarHotspotTetheringTest.kt
+@@ -18,6 +18,22 @@ import com.shilapi.xcertplay.network.CarHotspotTethering.Result
+ @RunWith(RobolectricTestRunner::class)
+ @Config(sdk = [29], manifest = Config.NONE)
+ class CarHotspotTetheringTest {
++    @Test fun android6UsesTheSavedApApiInsteadOfTheNewerBinder() {
++        var legacy = 0
++        requestSavedHotspotStart(23, { legacy++; true }, { fail("Android 6 has no newer tethering binder") })
++        assertEquals(1, legacy)
++    }
++    @Test fun rejectedLegacyRequestIsNotReportedAsReady() {
++        try {
++            requestSavedHotspotStart(23, { false }, { fail("wrong API") })
++            fail("rejected request accepted")
++        } catch (_: java.io.IOException) { }
++    }
++    @Test fun modernPlatformStillUsesTheExistingStartPath() {
++        var modern = 0
++        requestSavedHotspotStart(24, { fail("legacy must not run"); false }, { modern++ })
++        assertEquals(1, modern)
++    }
+     @Test fun startFailuresNameTheUnderlyingCause() {
+         assertEquals("NoSuchFieldException: mService", CarHotspotTethering.describe(NoSuchFieldException("mService")))
+         assertEquals("InvocationTargetException caused by SecurityException: uid 10123",
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/network/LegacyWirelessAddressesTest.kt b/shared/src/test/java/com/shilapi/xcertplay/network/LegacyWirelessAddressesTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4631d308a2d5c6dfe5111eecb8b7ae486c7ced5
+--- /dev/null
++++ b/shared/src/test/java/com/shilapi/xcertplay/network/LegacyWirelessAddressesTest.kt
+@@ -0,0 +1,19 @@
++package com.shilapi.xcertplay.network
++
++import java.net.InetAddress
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class LegacyWirelessAddressesTest {
++    private val v4 = InetAddress.getByName("192.168.49.1")
++    private val v6 = InetAddress.getByName("fe80::1")
++    @Test fun api23UsesIpv4EvenWhenTheLastRetryPreferredIpv6() {
++        assertEquals(listOf(v4), legacyWirelessAddresses(listOf(v6, v4), 23))
++    }
++    @Test fun ipv6OnlyStillWorks() {
++        assertEquals(listOf(v6), legacyWirelessAddresses(listOf(v6), 23))
++    }
++    @Test fun modernDualStackIsUnchanged() {
++        assertEquals(listOf(v6, v4), legacyWirelessAddresses(listOf(v6, v4), 24))
++    }
++}
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/network/MdnsPortDiagnosticsTest.kt b/shared/src/test/java/com/shilapi/xcertplay/network/MdnsPortDiagnosticsTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..659743b531937dfba5697d3d0a30d403433e59ce
+--- /dev/null
++++ b/shared/src/test/java/com/shilapi/xcertplay/network/MdnsPortDiagnosticsTest.kt
+@@ -0,0 +1,36 @@
++package com.shilapi.xcertplay.network
++
++import java.io.IOException
++import java.net.BindException
++import java.net.SocketException
++import org.junit.Assert.*
++import org.junit.Test
++
++class MdnsPortDiagnosticsTest {
++    @Test fun onlyAddressInUseTriggersRecovery() {
++        assertTrue(mdnsAddressInUse(BindException("Address already in use: bind")))
++        assertTrue(mdnsAddressInUse(IOException("outer", SocketException("bind failed: EADDRINUSE"))))
++        assertFalse(mdnsAddressInUse(BindException("Permission denied")))
++        assertFalse(mdnsAddressInUse(BindException("Cannot assign requested address")))
++        assertFalse(mdnsAddressInUse(IOException("Address already in use but not a socket error")))
++        assertFalse(mdnsAddressInUse(SecurityException("permission")))
++    }
++    @Test fun procParserRetainsOnlyMdnsOwnerNotAddressesOrOtherPorts() {
++        val lines = listOf(
++            "sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode",
++            " 0: 00000000:14E9 00000000:0000 07 00000000:00000000 00:00000000 00000000 1000 0 45678 2",
++            " 1: 0101A8C0:1B58 0201A8C0:0123 07 00000000:00000000 00:00000000 00000000 10123 0 98765 2",
++        )
++        assertEquals("uid=1000/inode=45678", MdnsPortDiagnostics.owners(lines))
++        assertEquals("no_visible_owner", MdnsPortDiagnostics.owners(emptyList()))
++        assertEquals("no_visible_owner", MdnsPortDiagnostics.owners(listOf("malformed")))
++    }
++    @Test fun packageLookupIsLimitedToMdnsOwnersAndFiltersUnexpectedText() {
++        val uids = mutableListOf<Int>()
++        val row="0: 00000000:14E9 00000000:0000 07 00000000:00000000 00:00000000 00000000 10123 0 45678 2"
++        assertEquals("uid=10123/inode=45678/packages=com.example.mdns", MdnsPortDiagnostics.owners(listOf(row)) {
++            uids.add(it); listOf("com.example.mdns", "bad\ntext")
++        })
++        assertEquals(listOf(10123), uids)
++    }
++}
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/orchestration/ControllerTeardownGateTest.kt b/shared/src/test/java/com/shilapi/xcertplay/orchestration/ControllerTeardownGateTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..a185ed7b55c14a163184a8e0f72bd0a13b58ff74
+--- /dev/null
++++ b/shared/src/test/java/com/shilapi/xcertplay/orchestration/ControllerTeardownGateTest.kt
+@@ -0,0 +1,41 @@
++package com.shilapi.xcertplay.orchestration
++
++import java.util.concurrent.CountDownLatch
++import java.util.concurrent.TimeUnit
++import org.junit.Assert.*
++import org.junit.Test
++
++class ControllerTeardownGateTest {
++    @Test fun emptyGateIsReady() { assertTrue(ControllerTeardownGate().await(0)) }
++    @Test fun unfinishedClosePreventsRestartAndIsNotForgottenOnTimeout() {
++        val gate = ControllerTeardownGate()
++        val token = gate.begin()
++        assertFalse(gate.await(1))
++        assertFalse(gate.await(0))
++        gate.complete(token)
++        assertTrue(gate.await(0))
++    }
++    @Test fun allOldOwnersMustFinish() {
++        val gate = ControllerTeardownGate()
++        val a = gate.begin(); val b = gate.begin()
++        gate.complete(a)
++        assertFalse(gate.await(0))
++        gate.complete(b); gate.complete(b)
++        assertTrue(gate.await(0))
++    }
++    @Test fun waiterResumesAfterActualCompletion() {
++        val gate = ControllerTeardownGate()
++        val token = gate.begin()
++        val started = CountDownLatch(1)
++        val done = CountDownLatch(1)
++        var result = false
++        val worker = Thread { started.countDown(); result = gate.await(2_000); done.countDown() }
++        worker.start()
++        assertTrue(started.await(1, TimeUnit.SECONDS))
++        assertFalse(done.await(30, TimeUnit.MILLISECONDS))
++        gate.complete(token)
++        assertTrue(done.await(1, TimeUnit.SECONDS))
++        worker.join(1_000)
++        assertTrue(result)
++    }
++}
